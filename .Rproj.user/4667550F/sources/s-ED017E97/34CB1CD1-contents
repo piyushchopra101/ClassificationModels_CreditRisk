@@ -1,0 +1,402 @@
+---
+title: "RandomForest"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'RandomForest.html'))})
+---
+
+```{r, include=FALSE, echo=FALSE, message=FALSE}
+#Downloading the required packages
+library(dplyr)
+library(readr)
+library(plyr)
+library(gmodels)
+library(ggplot2)
+library(ggpubr)
+library(pdp)
+library(klaR)
+library(Information)
+library(gridExtra)
+library(kableExtra)
+library(knitr)
+library(glmnet)
+library(tidyverse)
+library(caret)
+library(pROC)
+library(data.table)
+library(scales)
+library(openxlsx)
+library(png)
+library(knitr)
+library(kableExtra)
+library(broom)
+```
+
+```{r, include=FALSE, echo=FALSE, message=FALSE}
+german_credit<-read_delim("http://archive.ics.uci.edu/ml/machine-learning-databases/statlog/german/german.data",delim = " ",col_names = FALSE)
+headers=c("Status_checking_account","Duration_in_month","Credit_history",
+          "Purpose","Credit_amount","Savings_account_bonds","Present_employment_since",
+          "Installment_rate_in_percentage_of_disp_income","Personal_status_and_sex",
+          "Guarantors","Present_residence_since","Property","Age",
+          "Other_installment_plans","Housing","Number_of_existing_credits_at_this_bank",
+          "Job","Number_of_dependants","Telephone","foreign_worker","Credit_Risk")
+colnames(german_credit)<-headers
+#gdat<-german_credit
+```
+
+```{r, include=FALSE, echo=FALSE, message=FALSE}
+gdat<-german_credit
+gdat$Status_checking_account<-factor(mapvalues(gdat$Status_checking_account,c("A11","A12","A13","A14"),c("lt_0","lt_200","gte_200","No_account")),
+                                     levels =c("No_account","lt_0","lt_200","gte_200"))
+gdat$Credit_history<-factor(mapvalues(gdat$Credit_history,c("A30","A31","A32","A33","A34"),c("No_credit_due","All_paid_duly","All_existing_paid_duly","delayed_in_past","Critical")),
+                            levels = c("Critical","delayed_in_past","No_credit_due","All_paid_duly","All_existing_paid_duly"))
+gdat$Purpose<-factor(mapvalues(gdat$Purpose,c("A40","A41","A42","A43","A44","A45","A46","A47","A48","A49","A410"),c("New.car", "Used.car", "Furniture", "Television", "Appliances", "Repairs", "Education", "Vacation", "Retraining", "Business", "Others")))
+
+gdat$Savings_account_bonds<-factor(mapvalues(gdat$Savings_account_bonds,c("A61","A62","A63","A64","A65"),c("lt_100","100_500","500_1000","gt_1000","No_savings")),
+                                   levels=c("No_savings","lt_100","100_500","500_1000","gt_1000"))
+
+gdat$Present_employment_since<-factor(mapvalues(gdat$Present_employment_since,c("A71","A72","A73","A74","A75"),c("Unemployed","1_yr","4_yr","7_yr","gt_7_yr")),
+                                      levels=c("Unemployed","1_yr","4_yr","7_yr","gt_7_yr"))
+
+gdat$Personal_status_and_sex<-factor(mapvalues(gdat$Personal_status_and_sex,c("A91","A92","A93","A94","A95"),c("Male.divorced","Female.divorced","male.single","male.married","female.single")),
+                                     levels=c("female.single","Male.divorced","Female.divorced","male.single","male.married"))
+
+gdat$Guarantors<-factor(mapvalues(gdat$Guarantors,c("A101","A102","A103"),c("none","co_applicant","guarantor")),levels=c("none","co_applicant","guarantor"))
+
+gdat$Property<-factor(mapvalues(gdat$Property,c("A121","A122","A123","A124"),c("Real.estate","insurance","car","No.property")),levels=c("No.property","Real.estate","insurance","car"))
+
+gdat$Other_installment_plans<-factor(mapvalues(gdat$Other_installment_plans,c("A141","A142","A143"),c("banks","stores","None")),levels=c("None","banks","stores"))
+
+gdat$Housing<-factor(mapvalues(gdat$Housing,c("A151","A152","A153"),c("Rent","Own","Free")),levels =c("Free","Rent","Own"))
+
+gdat$Job<-factor(mapvalues(gdat$Job,c("A171","A172","A173","A174"),c("Unemployed_NonRes","Unskilled_Res","skilled","management")),
+                 levels=c("Unemployed_NonRes","Unskilled_Res","skilled","management"))
+
+gdat$Telephone<-factor(mapvalues(gdat$Telephone,c("A191","A192"),c("No","Yes")))
+
+gdat$foreign_worker<-factor(mapvalues(gdat$foreign_worker,c("A201","A202"),c("Yes","No")))
+
+gdat$Number_of_dependants<-factor(mapvalues(gdat$Number_of_dependants,c(2,1),c("lt_2","gt_2")),levels=c("lt_2","gt_2"))
+
+gdat$Installment_rate_in_percentage_of_disp_income<-factor(mapvalues(gdat$Installment_rate_in_percentage_of_disp_income,c(4,3,2,1),c("0_20","20_25","25_35","35_plus")),
+                                                           levels =c("0_20","20_25","25_35","35_plus"))
+
+gdat$Present_residence_since <-factor(mapvalues(gdat$Present_residence_since ,c("1","2","3","4"),c("lt_1_yr","1_4yr","4_7yr","gt_7_yr")),levels =c("lt_1_yr","1_4yr","4_7yr","gt_7_yr"))
+
+gdat$Credit_Risk<-factor(mapvalues(gdat$Credit_Risk,c(2,1),c("Bad","Good")))
+
+```
+
+
+```{r,message=FALSE,echo=FALSE,include=FALSE}
+confusion_roc_function<-function(log_model,training_df,testing_df,cutoff=0.5,model="logistic"){
+  if(model=="logistic"){
+    train_df1<-training_df
+    test_df1<-test_df
+    probabilities_test <- predict(log_model, test_df1[,-21])
+    probabilities_train <- predict(log_model, train_df1[,-21])
+    predicted.classes_test <- as.factor(if_else(probabilities_test > cutoff, "Good", "Bad"))
+    predicted.classes_train <- as.factor(if_else(probabilities_train > cutoff, "Good", "Bad"))
+    observed.classes_test <- test_df1$Credit_Risk
+    observed.classes_train <- train_df1$Credit_Risk
+    # Train Accuracy
+    cm.Train<-caret::confusionMatrix(predicted.classes_train,observed.classes_train,positive="Good")
+    caret::confusionMatrix(predicted.classes_train,observed.classes_train,positive="Good")
+    # Test Accuracy
+    cm.Test<-caret::confusionMatrix(predicted.classes_test,observed.classes_test,positive="Good")
+    caret::confusionMatrix(predicted.classes_test,observed.classes_test,positive="Good")
+    #quartz()
+    pROC_obj_train <- pROC::roc(train_df$Credit_Risk,probabilities_train,
+                          smoothed = TRUE,
+                          # arguments for ci
+                          ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+                          # arguments for plot
+                          plot=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+                          print.auc=TRUE, show.thres=TRUE)
+    #sens.ci_train <- ci.se(pROC_obj_train)
+    #train_roc<- plot(sens.ci_train, type="shape", col="lightblue")
+    pROC_obj_test <- pROC::roc(test_df$Credit_Risk,probabilities_test,
+                          smoothed = TRUE,
+                          # arguments for ci
+                          ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+                          # arguments for plot
+                          plot=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+                          print.auc=TRUE, show.thres=TRUE)
+    #sens.ci_test <- ci.se(pROC_obj_test)
+    
+    train_p <- ggroc(pROC_obj_train, alpha = 0.5, colour = "red", linetype = 1, size = 2)+
+  ggtitle(paste0('ROC Curve: Train set', '(AUC = ', round(pROC_obj_train$auc,4), ')'))+ geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+                 color="darkgrey", linetype="dashed")
+
+test_p <- ggroc(pROC_obj_test, alpha = 0.5, colour = "red", linetype = 1, size = 2)+
+  ggtitle(paste0('ROC Curve: Test set', '(AUC = ', round(pROC_obj_test$auc,4), ')'))+
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+                 color="darkgrey", linetype="dashed")
+
+    #test_roc<- plot(sens.ci_test, type="shape", col="lightblue")
+    return(list(CM_TEST=cm.Test,CM_TRAIN=cm.Train,plot_TRAIN=pROC_obj_train,plot_TEST=pROC_obj_test,train_p,test_p))
+  }
+  if(model=="RF"){
+    probabilities_test <- predict(log_model, testing_df[,names(testing_df) != "Credit_Risk"])
+    probabilities_train <- predict(log_model, training_df[,names(training_df) != "Credit_Risk"])
+    observed.classes_test <- testing_df$Credit_Risk
+    observed.classes_train <- training_df$Credit_Risk
+    cm.Test<-caret::confusionMatrix(probabilities_test,observed.classes_test,positive="Good")
+    cm.Train<-caret::confusionMatrix(probabilities_train,observed.classes_train,positive="Good")
+    
+    train_pred_1 <- predict(log_model, newdata = training_df,type="prob")[,2]
+    test_pred_1 <- predict(log_model, newdata = testing_df,type="prob")[,2]
+    train_roc<-pROC::roc( observed.classes_train,train_pred_1,
+           smoothed = TRUE,
+           # arguments for ci
+           ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+           # arguments for plot
+           plot=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+                          print.auc=TRUE, show.thres=TRUE)
+    
+    test_roc<-pROC::roc( observed.classes_test,test_pred_1,
+                      smoothed = TRUE,
+                      # arguments for ci
+                      ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+                      # arguments for plot
+                      plot=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+                          print.auc=TRUE, show.thres=TRUE)
+    
+     train_p <- ggroc(train_roc, alpha = 0.5, colour = "red", linetype = 1, size = 2)+
+  ggtitle(paste0('ROC Curve: Train set', '(AUC = ', round(train_roc$auc,4), ')'))+ geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+                 color="darkgrey", linetype="dashed")
+
+test_p <- ggroc(test_roc, alpha = 0.5, colour = "red", linetype = 1, size = 2)+
+  ggtitle(paste0('ROC Curve: Test set', '(AUC = ', round(test_roc$auc,4), ')'))+
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+                 color="darkgrey", linetype="dashed")
+    
+
+    return(list(CM_TEST=cm.Test,CM_TRAIN=cm.Train,AUC_train=train_roc,AUC_test=test_roc,train_p,test_p))
+    
+  }
+  if(model=="NB"){
+    probabilities_test <- predict(log_model, testing_df[,names(testing_df) != "Credit_Risk"])
+    probabilities_train <- predict(log_model, training_df[,names(training_df) != "Credit_Risk"])
+    observed.classes_test <- testing_df$Credit_Risk
+    observed.classes_train <- training_df$Credit_Risk
+    cm.Test<-caret::confusionMatrix(probabilities_test,observed.classes_test,positive="Good")
+    cm.Train<-caret::confusionMatrix(probabilities_train,observed.classes_train,positive="Good")
+        train_pred_1 <- predict(log_model, newdata = training_df,type="prob")[,2]
+    test_pred_1 <- predict(log_model, newdata = testing_df,type="prob")[,2]
+    train_roc<-pROC::roc( observed.classes_train,train_pred_1,
+           smoothed = TRUE,
+           # arguments for ci
+           ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+           # arguments for plot
+           plot=F)
+    test_roc<-pROC::roc( observed.classes_test,test_pred_1,
+                      smoothed = TRUE,
+                      # arguments for ci
+                      ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+                      # arguments for plot
+                      plot=F)
+    
+   train_p <- ggroc(train_roc, alpha = 0.5, colour = "red", linetype = 1, size = 2)+
+  ggtitle(paste0('ROC Curve: Train set', '(AUC = ', round(train_rocn$auc,4), ')'))+ geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+                 color="darkgrey", linetype="dashed")
+
+test_p <- ggroc(test_roc, alpha = 0.5, colour = "red", linetype = 1, size = 2)+
+  ggtitle(paste0('ROC Curve: Test set', '(AUC = ', round(test_roc$auc,4), ')'))+
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+                 color="darkgrey", linetype="dashed")
+
+    
+    return(list(CM_TEST=cm.Test,CM_TRAIN=cm.Train,AUC_train=train_roc,AUC_test=test_roc,train_ROC=train_p, test_p))
+  }
+}
+
+## Function for optimal cut off value
+AccuracyCutoffInfo <- function( train, test, predict, actual )
+{
+  # change the cutoff value's range as you please 
+  cutoff <- seq( .4, .8, by = .05 )
+  
+  accuracy <- lapply( cutoff, function(c)
+  {
+    # use the confusionMatrix from the caret package
+    cm_train <- caret::confusionMatrix(as.factor(as.numeric( train[[predict]] > c )),as.factor(as.numeric( train[[actual]])-1))
+    cm_test  <- caret::confusionMatrix(as.factor(as.numeric( test[[predict]] > c )),as.factor(as.numeric( test[[actual]])-1))
+    
+    dt <- data.table( cutoff = c,
+                      train  = cm_train$overall[["Accuracy"]],
+                      test   = cm_test$overall[["Accuracy"]] )
+    return(dt)
+  }) %>% rbindlist()
+  
+  # visualize the accuracy of the train and test set for different cutoff value 
+  # accuracy in percentage.
+  accuracy_long <- gather( accuracy, "data", "accuracy", -1 )
+  
+  plot <- ggplot( accuracy_long, aes( cutoff, accuracy, group = data, color = data ) ) + 
+    geom_line( size = 1 ) + geom_point( size = 3 ) +
+    scale_y_continuous( label = percent ) +
+    ggtitle( "Train/Test Accuracy for Different Cutoff" ) + theme_light()
+  
+  return( list( data = accuracy, plot = plot ) )
+}
+```
+
+
+### Random Forest with all the variables
+
+• Random forest builds multiple decision trees and merges them together to get a more accurate and stable prediction.
+
+• It builds an ensemble of decision trees, usually trained with the “bagging” method. The general idea of the bagging method is that a combination of learning models increases the overall result.
+
+```{r, echo=FALSE, message=FALSE,include=FALSE}
+gdat_log<- as.data.frame(unclass(gdat))
+str(gdat_log)
+## 75% of the sample size
+smp_size <- floor(0.70 * nrow(gdat))
+## set the seed to make your partition reproducible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(gdat_log)), size = smp_size)
+train_df <- gdat_log[train_ind, ]
+test_df <- gdat_log[-train_ind, ]
+dim(train_df)
+dim(test_df)
+
+```
+
+```{r,message=FALSE,echo=FALSE}
+trControl <- trainControl(method = "cv",
+                          number = 10,savePredictions = "final",classProbs = T)
+fit_rf <- caret::train(Credit_Risk~.,data = train_df,
+                method = "rf",
+                metric = "Accuracy",
+                trControl = trControl,
+                importance = TRUE,
+                nodesize = 14,
+                ntree = 800,
+                maxnodes = 24)
+```
+
+• Table shows accuracy and kappa for the number of trees given as mtry.
+
+• Printing the top 20 variables (based on their Variable importance) to the table below.
+\
+```{r,message=FALSE,echo=FALSE, fig.height=9}
+#print(fit_rf)
+fit_rf$results[,1:3] %>% kable() %>%
+  kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T) 
+
+fit_rf_VI <- varImp(fit_rf)
+fit_rf_VI$importance %>% rownames_to_column("Variable") %>%
+  arrange(desc(Good)) %>% dplyr::select(Variable,Good) %>% 
+  top_n(20) %>% kable(col.names = c("Variable","Importance")) %>%
+  kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T) 
+```
+
+\
+• Plot shows variable importance on the x-axis and the variable names on the y-axis
+
+```{r,message=FALSE,echo=FALSE, fig.height=9}
+plot(varImp(fit_rf))
+```
+
+
+• The tables below show train set confusion matrix and train set model performance (accuracy taken as an average of all the random forest models in cross validation)
+
+```{r,message=FALSE,echo=FALSE,include=TRUE, warning=FALSE}
+rf_full<-confusion_roc_function(fit_rf,train_df,test_df,model="RF")
+
+kable(as.matrix(rf_full$CM_TRAIN),caption = "TRAIN FIT") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T)  
+
+tidy(rf_full$CM_TRAIN)[-c(3),c(1,3)]%>%kable(caption = "TRAIN FIT PERFORMANCE") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T) 
+
+rf_full[[5]]
+
+```
+
+• The tables below show test set confusion matrix and test set model performance (accuracy taken as an average of all the random forest models in cross validation)
+
+```{r,message=FALSE,echo=FALSE,include=TRUE, warning=FALSE}
+#log_full_mofrl[[5]]
+
+kable(as.matrix(rf_full$CM_TEST),caption = "TEST FIT") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T)  
+
+tidy(rf_full$CM_TEST)[-c(3),c(1,3)]%>%kable(caption = "TEST FIT PERFORMANCE") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T) 
+
+rf_full[[6]]
+#log_full_mofrl[[6]]
+```
+
+• Below are the significant variables from Random forest model
+
+```{r,message=FALSE,echo=FALSE, warning=FALSE}
+#Building Final Model with selected variables.
+important_columns_rf<-c("Age","Credit_amount","Credit_history","Duration_in_month","Guarantors","Job","Personal_status_and_sex","Present_employment_since","Property","Purpose","Savings_account_bonds","Status_checking_account","Present_residence_since","Credit_Risk")
+
+#important_columns<-c("Age","Credit_amount","Credit_history","Duration_in_month","Guarantors","Installment_rate_in_percentage_of_disp_income","Present_employment_since","Purpose","Savings_account_bonds","Status_checking_account","Credit_Risk")
+#print("Important Varibales from Above Techniques and Variable Selection methods")
+
+important_columns_rf %>% kable(col.names = "Significant Variables") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T) 
+```
+
+```{r,message=FALSE,echo=FALSE,include=FALSE, warning=FALSE}
+subset_imp_var_rf<-gdat_log[important_columns_rf]
+smp_size <- floor(0.70 * nrow(gdat))
+## set the seed to make your partition reproducible
+set.seed(45)
+train_ind <- sample(seq_len(nrow(subset_imp_var_rf)), size = smp_size)
+train_df_subset_rf <- subset_imp_var_rf[train_ind, ]
+test_df_subset_rf <- subset_imp_var_rf[-train_ind, ]
+#dim(train_df_subset_rf)
+#dim(test_df_subset_rf)
+```
+
+### Model with significant variables
+\
+• Building Random forest model with Significant variables identified from Variable Importance.
+\
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+## Random Forest
+trControl <- trainControl(method = "cv",
+                          number = 15,savePredictions = "final",classProbs = T)
+fit_rf_sig <- caret::train(Credit_Risk~.,data = train_df_subset_rf,
+                method = "rf",
+                metric = "Accuracy",
+                trControl = trControl,
+                importance = TRUE,
+                nodesize = 14,
+                ntree = 800,
+                maxnodes = 24)
+
+```
+
+• Let's look at the train confusion matrix, their accuracies and other model performance measures.
+
+```{r,message=FALSE,echo=FALSE}
+fit_rf_sig$results[,1:3] %>% kable(caption = "RANDOM FOREST MODEL") %>%
+  kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T)
+
+```
+
+```{r,message=FALSE,echo=FALSE}
+
+rf_fit_sig<-confusion_roc_function(fit_rf_sig,train_df_subset_rf,test_df_subset_rf,model="RF")
+
+kable(as.matrix(rf_fit_sig$CM_TRAIN),caption = "TRAIN FIT") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T)  
+
+tidy(rf_fit_sig$CM_TRAIN)[-c(3),c(1,3)]%>%kable(caption = "TRAIN FIT PERFORMANCE") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T)  
+#log_full_mofrl[[5]]
+```
+
+• Let's look at the train confusion matrix, their accuracies and other model performance measures.
+
+```{r,message=FALSE,echo=FALSE}
+kable(as.matrix(rf_fit_sig$CM_TEST),caption = "TEST FIT") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T)  
+
+tidy(rf_fit_sig$CM_TEST)[-c(3),c(1,3)]%>%kable(caption = "TEST FIT PERFORMANCE") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T)  
+#log_full_mofrl[[6]]
+
+```
+

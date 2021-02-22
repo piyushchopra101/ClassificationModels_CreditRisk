@@ -1,0 +1,248 @@
+---
+title: "ExploratoryDataAnalysis"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'ExploratoryDataAnalysis.html'))})
+---
+
+### Data 
+
+The German credit risk data can be downloaded from the [UCI Machine Learning repository](https://archive.ics.uci.edu/ml/datasets/Statlog+%28German+Credit+Data%29). The data set has 1000 observations with 21 variables. There are categorical and numeric variables in this dataset.
+
+```{r, include=FALSE, echo=FALSE, message=FALSE}
+#Downloading the required packages
+library(dplyr)
+library(readr)
+library(plyr)
+library(gmodels)
+library(ggplot2)
+library(ggpubr)
+library(pdp)
+library(klaR)
+library(Information)
+library(gridExtra)
+library(kableExtra)
+library(knitr)
+library(glmnet)
+library(tidyverse)
+library(caret)
+library(pROC)
+library(data.table)
+library(scales)
+library(openxlsx)
+library(png)
+library(knitr)
+library(kableExtra)
+library(broom)
+```
+
+
+```{r, include=FALSE, echo=FALSE, message=FALSE}
+german_credit<-read_delim("http://archive.ics.uci.edu/ml/machine-learning-databases/statlog/german/german.data",delim = " ",col_names = FALSE)
+headers=c("Status_checking_account","Duration_in_month","Credit_history",
+          "Purpose","Credit_amount","Savings_account_bonds","Present_employment_since",
+          "Installment_rate_in_percentage_of_disp_income","Personal_status_and_sex",
+          "Guarantors","Present_residence_since","Property","Age",
+          "Other_installment_plans","Housing","Number_of_existing_credits_at_this_bank",
+          "Job","Number_of_dependants","Telephone","foreign_worker","Credit_Risk")
+colnames(german_credit)<-headers
+#gdat<-german_credit
+```
+
+### Data Manipulation
+
+The steps include, converting data to the required data types, using interpretable class labels, checking and omitting NAs in the data (if any). 
+
+```{r, include=FALSE, echo=FALSE, message=FALSE,include=FALSE}
+# Lables Categories with descriptive names - Useful for model interpretation.
+gdat<-german_credit
+gdat_1<-as.data.frame(unclass(gdat))
+gdat$Status_checking_account<-mapvalues(gdat$Status_checking_account,c("A11","A12","A13","A14"),c("lt_0","lt_200","gte_200","No_account"))
+gdat$Credit_history<-mapvalues(gdat$Credit_history,c("A30","A31","A32","A33","A34"),c("No_credit_due","All_paid_duly","All_existing_paid_duly","delayed_in_past","Critical"))
+gdat$Purpose<-mapvalues(gdat$Purpose,c("A40","A41","A42","A43","A44","A45","A46","A47","A48","A49","A410"),c("New.car", "Used.car", "Furniture", "Television", "Appliances", "repairs", "education", "vacation", "retraining", "business", "others"))
+gdat$Savings_account_bonds<-mapvalues(gdat$Savings_account_bonds,c("A61","A62","A63","A64","A65"),c("lt_100","100_500","500_1000","gt_1000","No_savings"))
+gdat$Present_employment_since<-mapvalues(gdat$Present_employment_since,c("A71","A72","A73","A74","A75"),c("Unemployed","1_yr","4_yr","7_yr","gt_7_yr"))
+gdat$Personal_status_and_sex<-mapvalues(gdat$Personal_status_and_sex,c("A91","A92","A93","A94","A95"),c("Male.divorced","Female.divorced","male.single","male.married","female.single"))
+gdat$Guarantors<-mapvalues(gdat$Guarantors,c("A101","A102","A103"),c("none","co_applicant","guarantor"))
+gdat$Property<-mapvalues(gdat$Property,c("A121","A122","A123","A124"),c("Real.estate","insurance","car","No.property"))
+gdat$Other_installment_plans<-mapvalues(gdat$Other_installment_plans,c("A141","A142","A143"),c("banks","stores","None"))
+gdat$Housing<-mapvalues(gdat$Housing,c("A151","A152","A153"),c("Rent","Own","Free"))
+gdat$Job<-mapvalues(gdat$Job,c("A171","A172","A173","A174"),c("Unemployed_NonRes","Unskilled_Res","skilled","management"))
+gdat$Telephone<-mapvalues(gdat$Telephone,c("A191","A192"),c("No","Yes"))
+gdat$foreign_worker<-mapvalues(gdat$foreign_worker,c("A201","A202"),c("Yes","No"))
+gdat$Number_of_dependants<-mapvalues(gdat$Number_of_dependants,c(2,1),c("lt_2","gt_2"))
+gdat$Installment_rate_in_percentage_of_disp_income<-mapvalues(gdat$Installment_rate_in_percentage_of_disp_income,c(4,3,2,1),c("0_20","20_25","25_35","35_plus"))
+gdat$Present_residence_since <-mapvalues(gdat$Present_residence_since ,c("1","2","3","4"),c("lt_1_yr","1_4yr","4_7yr","gt_7_yr"))
+gdat$Credit_Risk<-mapvalues(gdat$Credit_Risk,c(2,1),c("Bad","Good"))
+#gdat$Credit_Risk <- factor(gdat$Credit_Risk,levels=c("Good","Bad"))
+```
+
+```{r, include=FALSE, echo=FALSE, message=FALSE}
+gdat<-german_credit
+gdat$Status_checking_account<-factor(mapvalues(gdat$Status_checking_account,c("A11","A12","A13","A14"),c("lt_0","lt_200","gte_200","No_account")),
+                                     levels =c("No_account","lt_0","lt_200","gte_200"))
+gdat$Credit_history<-factor(mapvalues(gdat$Credit_history,c("A30","A31","A32","A33","A34"),c("No_credit_due","All_paid_duly","All_existing_paid_duly","delayed_in_past","Critical")),
+                            levels = c("Critical","delayed_in_past","No_credit_due","All_paid_duly","All_existing_paid_duly"))
+gdat$Purpose<-factor(mapvalues(gdat$Purpose,c("A40","A41","A42","A43","A44","A45","A46","A47","A48","A49","A410"),c("New.car", "Used.car", "Furniture", "Television", "Appliances", "Repairs", "Education", "Vacation", "Retraining", "Business", "Others")))
+
+gdat$Savings_account_bonds<-factor(mapvalues(gdat$Savings_account_bonds,c("A61","A62","A63","A64","A65"),c("lt_100","100_500","500_1000","gt_1000","No_savings")),
+                                   levels=c("No_savings","lt_100","100_500","500_1000","gt_1000"))
+
+gdat$Present_employment_since<-factor(mapvalues(gdat$Present_employment_since,c("A71","A72","A73","A74","A75"),c("Unemployed","1_yr","4_yr","7_yr","gt_7_yr")),
+                                      levels=c("Unemployed","1_yr","4_yr","7_yr","gt_7_yr"))
+
+gdat$Personal_status_and_sex<-factor(mapvalues(gdat$Personal_status_and_sex,c("A91","A92","A93","A94","A95"),c("Male.divorced","Female.divorced","male.single","male.married","female.single")),
+                                     levels=c("female.single","Male.divorced","Female.divorced","male.single","male.married"))
+
+gdat$Guarantors<-factor(mapvalues(gdat$Guarantors,c("A101","A102","A103"),c("none","co_applicant","guarantor")),levels=c("none","co_applicant","guarantor"))
+
+gdat$Property<-factor(mapvalues(gdat$Property,c("A121","A122","A123","A124"),c("Real.estate","insurance","car","No.property")),levels=c("No.property","Real.estate","insurance","car"))
+
+gdat$Other_installment_plans<-factor(mapvalues(gdat$Other_installment_plans,c("A141","A142","A143"),c("banks","stores","None")),levels=c("None","banks","stores"))
+
+gdat$Housing<-factor(mapvalues(gdat$Housing,c("A151","A152","A153"),c("Rent","Own","Free")),levels =c("Free","Rent","Own"))
+
+gdat$Job<-factor(mapvalues(gdat$Job,c("A171","A172","A173","A174"),c("Unemployed_NonRes","Unskilled_Res","skilled","management")),
+                 levels=c("Unemployed_NonRes","Unskilled_Res","skilled","management"))
+
+gdat$Telephone<-factor(mapvalues(gdat$Telephone,c("A191","A192"),c("No","Yes")))
+
+gdat$foreign_worker<-factor(mapvalues(gdat$foreign_worker,c("A201","A202"),c("Yes","No")))
+
+gdat$Number_of_dependants<-factor(mapvalues(gdat$Number_of_dependants,c(2,1),c("lt_2","gt_2")),levels=c("lt_2","gt_2"))
+
+gdat$Installment_rate_in_percentage_of_disp_income<-factor(mapvalues(gdat$Installment_rate_in_percentage_of_disp_income,c(4,3,2,1),c("0_20","20_25","25_35","35_plus")),
+                                                           levels =c("0_20","20_25","25_35","35_plus"))
+
+gdat$Present_residence_since <-factor(mapvalues(gdat$Present_residence_since ,c("1","2","3","4"),c("lt_1_yr","1_4yr","4_7yr","gt_7_yr")),levels =c("lt_1_yr","1_4yr","4_7yr","gt_7_yr"))
+
+gdat$Credit_Risk<-factor(mapvalues(gdat$Credit_Risk,c(2,1),c("Bad","Good")))
+
+```
+
+
+
+Let's look at the data! The data has 1000 rows and 21 variables
+
+```{r, echo=FALSE, message=FALSE}
+#dim(gdat)
+#print(paste0(colnames(gdat)))
+colnames(gdat)%>% knitr::kable(col.names = "Variables in the data") %>%
+  kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T) %>%
+  add_indent(c(1:21)) %>%
+   row_spec(21, bold = T, color = "white", background = "#D7261E")
+```
+
+### Data Summary
+
+Looking at the data summary for numeric variables
+
+```{r,include=TRUE,echo=FALSE, message=FALSE }
+knitr::kable(summary(gdat[,c(2,5,13)]),"pipe")
+```
+
+### Frequency tables
+
+Credit risk is the outcome variable. The frequency table for each variable vs the Credit risk is shown below. Cell counts also show per row proportions, for example: In case of the foreign worker variable, 30.7% of the foreign workers have credit risk label as "bad" and 69.3% of the foreign workers have "good" credit risk label.
+
+```{r,echo=FALSE, message=FALSE,include=FALSE }
+gdat <- as.data.frame(gdat)
+gdat[,c(1,3,4,6:12,14:21)] <- gdat[,c(1,3,4,6:12,14:21)] %>%
+  mutate_if(sapply(gdat[,c(1,3,4,6:12,14:21)], is.character), as.factor)
+
+chisq_pvals <- c()
+gdat_cat <- gdat[,c(1,3,4,6:12,14:21)]
+  for (i in colnames(gdat_cat)) {
+  Credit_Risk <- gdat_cat[,18]
+  if(i!=18){
+  ct <- CrossTable(gdat_cat[,i],Credit_Risk,prop.t=FALSE,prop.r=TRUE,prop.c=FALSE,prop.chisq=FALSE,chisq=TRUE,dnn=c(i,"Credit_Risk"))
+  chisq_pvals[i] <- ct$chisq[3]
+  }
+  }
+```
+
+```{r,echo=FALSE, message=FALSE}
+  for (i in colnames(gdat_cat)) {
+  Credit_Risk <- gdat_cat[,18]
+  if(i!=18){
+  ct <-CrossTable(gdat_cat[,i],Credit_Risk,prop.t=FALSE,prop.r=TRUE,prop.c=FALSE,prop.chisq=FALSE,dnn=c(i,"Credit_Risk"),format="SAS") 
+  }
+  }
+```
+
+### Measures of Association
+
+• Chi-sq test of independence: to test whether two categorical variables are dependent or not. It evaluates whether there is a significant association between the categories of the two variables. A p-value less than 0.05(significance threshold) implies that the two variables are significantly associated to each other.
+
+
+```{r,include=TRUE,message=FALSE,echo=FALSE}
+
+chisq_pvals <- t(as.data.frame(chisq_pvals))
+colnames(chisq_pvals) <- c("p.values")
+knitr::kable(chisq_pvals)%>%
+  kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T) %>%
+  add_indent(c(1:18))
+
+```
+
+
+### Visualizations
+Let's understand the data from the plots.
+
+• Barplots: for categorical data showing the frequency color coded based on the outcome variable (Credit risk)
+
+```{r, include=TRUE,message=FALSE,echo=FALSE,fig.width=35,fig.height=10}
+c1<-colnames(gdat_cat)
+c2<-gdat[c1]
+
+many_plots<-lapply(names(c2)[-ncol(c2)], function(x){
+  this_dat <- c2[, c(x, 'Credit_Risk')]
+  names(this_dat)[1] <-"Var"
+  ggplot(this_dat, aes(x=Var, fill=Credit_Risk)) +
+    geom_bar(alpha=0.8,position = position_dodge(preserve = "single")) +scale_fill_brewer(palette="Dark2")+
+    theme(title=element_text(face="bold",size=32),axis.text.x=element_text(face="bold",size=28,angle = 30),
+          axis.text.y=element_text(face="bold",size=28,angle = 30),legend.text=element_text(size=28))+
+    xlab(paste0(x))+coord_flip()
+  })
+
+#legend <- cowplot::get_legend(many_plots[[1]])
+many_plots[[18]] <- ggplot()+theme_void()
+
+ggarrange(many_plots[[1]],many_plots[[2]],many_plots[[3]],ncol=3,common.legend = TRUE, legend="bottom")
+ggarrange(many_plots[[4]],many_plots[[5]],many_plots[[6]],ncol=3,common.legend = TRUE, legend="bottom")
+ggarrange(many_plots[[7]],many_plots[[8]],many_plots[[9]],ncol=3,common.legend = TRUE, legend="bottom")
+ggarrange(many_plots[[10]],many_plots[[11]],many_plots[[12]],ncol=3,common.legend = TRUE, legend="bottom")
+ggarrange(many_plots[[13]],many_plots[[14]],many_plots[[15]],ncol=3,common.legend = TRUE, legend="bottom")
+ggarrange(many_plots[[16]],many_plots[[17]],many_plots[[18]],ncol=3,common.legend = TRUE, legend="bottom")
+#grid.arrange(many_plots[[1]],many_plots[[2]],many_plots[[3]],ncol=3)
+```
+
+• Boxplots for numeric data showing the distributions color coded based on the outcome variable (Credit risk)
+```{r, include=TRUE,message=FALSE,echo=FALSE,fig.width=28,fig.height=10}
+gdat_num <- gdat[c(2,5,13,21)]
+c3<-colnames(gdat_num)
+c4<-gdat[c3]
+many_plots_2 <- lapply(names(c4)[-ncol(c4)], function(x){
+  this_dat <- c4[,c(x, 'Credit_Risk')]
+  names(this_dat)[1] <-"Var"
+  ggplot(this_dat, aes(x=Var, fill=Credit_Risk)) + xlab(paste0(x))+ylab("frequency")+
+    geom_histogram(position="identity", alpha=0.7)+scale_fill_brewer(palette="Dark2")+
+    theme(title=element_text(face="bold",size=24),axis.text.x=element_text(face="bold",size=20),
+          axis.text.y=element_text(face="bold",size=20),legend.text=element_text(size=20))
+})
+#ggarrange(many_plots_2[[1]],many_plots_2[[2]],many_plots_2[[3]],ncol=3,common.legend = TRUE, legend="bottom")
+
+many_plots_3 <- lapply(names(c4)[-ncol(c4)], function(x){
+  this_dat <- c4[,c(x, 'Credit_Risk')]
+  names(this_dat)[1] <-"Var"
+ ggplot(this_dat, aes(x=Credit_Risk, y=Var, fill=Credit_Risk)) + 
+    geom_boxplot(width=0.5,alpha=0.8)+scale_fill_brewer(palette="Dark2")+ylab(paste0(x))+
+    theme(title=element_text(face="bold",size=28),axis.text.x=element_text(face="bold",size=24),
+          axis.text.y=element_text(face="bold",size=24),legend.text=element_text(size=24))
+})
+
+ggarrange(many_plots_3[[1]],many_plots_3[[2]],many_plots_3[[3]],ncol=3,common.legend = TRUE, legend="bottom")
+
+```

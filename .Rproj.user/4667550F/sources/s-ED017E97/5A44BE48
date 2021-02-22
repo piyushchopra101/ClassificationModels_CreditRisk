@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1614004417463.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "859693347",
+    "id" : "5A44BE48",
+    "lastKnownWriteTime" : 1614004137,
+    "last_content_update" : 1614004137,
+    "path" : "~/Documents/Github/ClassificationModels_CreditRisk/FinalModel.Rmd",
+    "project_path" : "FinalModel.Rmd",
+    "properties" : {
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 7,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

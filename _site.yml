@@ -1,0 +1,22 @@
+name: "Classification"
+output_dir: "docs"
+navbar:
+  title: "Classification of Credit Risk Data"
+  left:
+  - text: "Home"
+    href: index.html
+  - text: "Exploratory Data Analysis"
+    href: ExploratoryDataAnalysis.html
+  - text: "WOE and IV"
+    href: WOE_IV.html
+  - text: "Logistic Regression"
+    href: LogisticRegression.html
+  - text: "Random Forest"
+    href: RandomForest.html
+  - text: "Naive Bayes"
+    href: NaiveBayes.html
+  - text: "Final Model"
+    href: FinalModel.html
+output:
+  html_document:
+          theme: cosmo

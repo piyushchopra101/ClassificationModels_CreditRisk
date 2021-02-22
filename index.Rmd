@@ -1,0 +1,44 @@
+---
+title: "Credit Risk Analysis"
+output: html_document
+---
+
+```{r, include=FALSE, echo=FALSE, message=FALSE}
+#Downloading the required packages
+library(rmarkdown)
+library(shiny)
+```
+
+### Background
+• Credit worthiness is very important for everyone since it is regarded as an indicator for how dependable an individual is. In various situations, service suppliers need to evaluate customers’ credit history first, and then decide whether they will provide the service or not. 
+
+• Credit scoring algorithms, which make a guess at the probability of default, are the method banks use to determine whether or not a loan should be granted. Building a model to Predict Probability of default(PD) is a very challenging process and can involve a number of dynamic variables depending on its application and use.
+
+• The data used is a record of loans in the late 1990's from a South German bank classified into good or bad credit risk depending on a set of attributes.
+
+• The data set for this analysis is taken from UCI machine Learning repository.
+There are 1000 Rows with over 20 predictors.
+
+• Classification is done using Logistic Regression, Random forest and Naive bayes approaches to compare for the best model. 
+
+• The German credit risk data can be downloaded from the [UCI Machine Learning repository](https://archive.ics.uci.edu/ml/datasets/Statlog+%28German+Credit+Data%29). The data set has 1000 observations with 21 variables. There are categorical and numeric variables in this dataset.
+
+### Outline
+
+• Data Description
+
+• Exploratory Data Analysis (EDA): Chi-squared test, barplots and boxplots
+
+• Weight of evidence (WOE), Information value (IV) gain
+
+• Variable Selection: Lasso, Step-wise selection
+
+• Model Building: Logistic Regression, Random Forests, Naive Bayes
+
+• Model Performance: accuracy, TPR, fpr, ROC and AUC
+
+• Final model: Logistic regression using variables inferred from the above models
+ \
+ \
+ 
+#### Data Mining project (STA 545 Statistical Data Mining 1) 2016

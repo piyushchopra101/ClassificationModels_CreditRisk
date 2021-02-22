@@ -1,0 +1,434 @@
+---
+title: "FinalModel"
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'FinalModel.html'))})
+---
+
+```{r, include=FALSE, echo=FALSE, message=FALSE}
+#Downloading the required packages
+library(dplyr)
+library(readr)
+library(plyr)
+library(gmodels)
+library(ggplot2)
+library(ggpubr)
+library(pdp)
+library(klaR)
+library(Information)
+library(gridExtra)
+library(kableExtra)
+library(knitr)
+library(glmnet)
+library(tidyverse)
+library(caret)
+library(pROC)
+library(data.table)
+library(scales)
+library(openxlsx)
+library(png)
+library(knitr)
+library(kableExtra)
+library(broom)
+```
+
+```{r,message=FALSE,echo=FALSE,include=FALSE}
+confusion_roc_function<-function(log_model,training_df,testing_df,cutoff=0.5,model="logistic"){
+  if(model=="logistic"){
+    train_df1<-training_df
+    test_df1<-test_df
+    probabilities_test <- predict(log_model, test_df1[,-21])
+    probabilities_train <- predict(log_model, train_df1[,-21])
+    predicted.classes_test <- as.factor(if_else(probabilities_test > cutoff, "Good", "Bad"))
+    predicted.classes_train <- as.factor(if_else(probabilities_train > cutoff, "Good", "Bad"))
+    observed.classes_test <- test_df1$Credit_Risk
+    observed.classes_train <- train_df1$Credit_Risk
+    # Train Accuracy
+    cm.Train<-caret::confusionMatrix(predicted.classes_train,observed.classes_train,positive="Good")
+    caret::confusionMatrix(predicted.classes_train,observed.classes_train,positive="Good")
+    # Test Accuracy
+    cm.Test<-caret::confusionMatrix(predicted.classes_test,observed.classes_test,positive="Good")
+    caret::confusionMatrix(predicted.classes_test,observed.classes_test,positive="Good")
+    #quartz()
+    pROC_obj_train <- pROC::roc(train_df$Credit_Risk,probabilities_train,
+                          smoothed = TRUE,
+                          # arguments for ci
+                          ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+                          # arguments for plot
+                          plot=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+                          print.auc=TRUE, show.thres=TRUE)
+    #sens.ci_train <- ci.se(pROC_obj_train)
+    #train_roc<- plot(sens.ci_train, type="shape", col="lightblue")
+    pROC_obj_test <- pROC::roc(test_df$Credit_Risk,probabilities_test,
+                          smoothed = TRUE,
+                          # arguments for ci
+                          ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+                          # arguments for plot
+                          plot=FALSE, auc.polygon=TRUE, max.auc.polygon=TRUE, grid=TRUE,
+                          print.auc=TRUE, show.thres=TRUE)
+    #sens.ci_test <- ci.se(pROC_obj_test)
+    
+    train_p <- ggroc(pROC_obj_train, alpha = 0.5, colour = "red", linetype = 1, size = 2)+
+  ggtitle(paste0('ROC Curve: Train set', '(AUC = ', round(pROC_obj_train$auc,4), ')'))+ geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+                 color="darkgrey", linetype="dashed")
+
+test_p <- ggroc(pROC_obj_test, alpha = 0.5, colour = "red", linetype = 1, size = 2)+
+  ggtitle(paste0('ROC Curve: Test set', '(AUC = ', round(pROC_obj_test$auc,4), ')'))+
+  geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+                 color="darkgrey", linetype="dashed")
+
+    #test_roc<- plot(sens.ci_test, type="shape", col="lightblue")
+    return(list(CM_TEST=cm.Test,CM_TRAIN=cm.Train,plot_TRAIN=pROC_obj_train,plot_TEST=pROC_obj_test,train_p,test_p))
+  }
+  if(model=="RF"){
+    probabilities_test <- predict(log_model, testing_df[,names(testing_df) != "Credit_Risk"])
+    probabilities_train <- predict(log_model, training_df[,names(training_df) != "Credit_Risk"])
+    observed.classes_test <- testing_df$Credit_Risk
+    observed.classes_train <- training_df$Credit_Risk
+    cm.Test<-caret::confusionMatrix(probabilities_test,observed.classes_test,positive="Good")
+    cm.Train<-caret::confusionMatrix(probabilities_train,observed.classes_train,positive="Good")
+    
+    train_pred_1 <- predict(log_model, newdata = training_df,type="prob")[,2]
+    test_pred_1 <- predict(log_model, newdata = testing_df,type="prob")[,2]
+    train_roc<-pROC::roc( observed.classes_train,train_pred_1,
+           smoothed = TRUE,
+           # arguments for ci
+           ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+           # arguments for plot
+           plot=F)
+    test_roc<-pROC::roc( observed.classes_test,test_pred_1,
+                      smoothed = TRUE,
+                      # arguments for ci
+                      ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+                      # arguments for plot
+                      plot=F)
+
+    return(list(CM_TEST=cm.Test,CM_TRAIN=cm.Train,AUC_train=train_roc,AUC_test=test_roc))
+    
+  }
+  if(model=="NB"){
+    probabilities_test <- predict(log_model, testing_df[,names(testing_df) != "Credit_Risk"])
+    probabilities_train <- predict(log_model, training_df[,names(training_df) != "Credit_Risk"])
+    observed.classes_test <- testing_df$Credit_Risk
+    observed.classes_train <- training_df$Credit_Risk
+    cm.Test<-caret::confusionMatrix(probabilities_test,observed.classes_test,positive="Good")
+    cm.Train<-caret::confusionMatrix(probabilities_train,observed.classes_train,positive="Good")
+        train_pred_1 <- predict(log_model, newdata = training_df,type="prob")[,2]
+    test_pred_1 <- predict(log_model, newdata = testing_df,type="prob")[,2]
+    train_roc<-pROC::roc( observed.classes_train,train_pred_1,
+           smoothed = TRUE,
+           # arguments for ci
+           ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+           # arguments for plot
+           plot=F)
+    test_roc<-pROC::roc( observed.classes_test,test_pred_1,
+                      smoothed = TRUE,
+                      # arguments for ci
+                      ci=TRUE, ci.alpha=0.9, stratified=FALSE,
+                      # arguments for plot
+                      plot=F)
+    
+    return(list(CM_TEST=cm.Test,CM_TRAIN=cm.Train,AUC_train=train_roc,AUC_test=test_roc))
+  }
+}
+
+## Function for optimal cut off value
+AccuracyCutoffInfo <- function( train, test, predict, actual )
+{
+  # change the cutoff value's range as you please 
+  cutoff <- seq( .4, .8, by = .05 )
+  
+  accuracy <- lapply( cutoff, function(c)
+  {
+    # use the confusionMatrix from the caret package
+    cm_train <- caret::confusionMatrix(as.factor(as.numeric( train[[predict]] > c )),as.factor(as.numeric( train[[actual]])-1))
+    cm_test  <- caret::confusionMatrix(as.factor(as.numeric( test[[predict]] > c )),as.factor(as.numeric( test[[actual]])-1))
+    
+    dt <- data.table( cutoff = c,
+                      train  = cm_train$overall[["Accuracy"]],
+                      test   = cm_test$overall[["Accuracy"]] )
+    return(dt)
+  }) %>% rbindlist()
+  
+  # visualize the accuracy of the train and test set for different cutoff value 
+  # accuracy in percentage.
+  accuracy_long <- gather( accuracy, "data", "accuracy", -1 )
+  
+  plot <- ggplot( accuracy_long, aes( cutoff, accuracy, group = data, color = data ) ) + 
+    geom_line( size = 1 ) + geom_point( size = 3 ) +
+    scale_y_continuous( label = percent ) +
+    ggtitle( "Train/Test Accuracy for Different Cutoff" ) + theme_light()
+  
+  return( list( data = accuracy, plot = plot ) )
+}
+```
+
+```{r, include=FALSE, echo=FALSE, message=FALSE}
+german_credit<-read_delim("http://archive.ics.uci.edu/ml/machine-learning-databases/statlog/german/german.data",delim = " ",col_names = FALSE)
+headers=c("Status_checking_account","Duration_in_month","Credit_history",
+          "Purpose","Credit_amount","Savings_account_bonds","Present_employment_since",
+          "Installment_rate_in_percentage_of_disp_income","Personal_status_and_sex",
+          "Guarantors","Present_residence_since","Property","Age",
+          "Other_installment_plans","Housing","Number_of_existing_credits_at_this_bank",
+          "Job","Number_of_dependants","Telephone","foreign_worker","Credit_Risk")
+colnames(german_credit)<-headers
+#gdat<-german_credit
+```
+
+```{r, include=FALSE, echo=FALSE, message=FALSE}
+gdat<-german_credit
+gdat$Status_checking_account<-factor(mapvalues(gdat$Status_checking_account,c("A11","A12","A13","A14"),c("lt_0","lt_200","gte_200","No_account")),
+                                     levels =c("No_account","lt_0","lt_200","gte_200"))
+gdat$Credit_history<-factor(mapvalues(gdat$Credit_history,c("A30","A31","A32","A33","A34"),c("No_credit_due","All_paid_duly","All_existing_paid_duly","delayed_in_past","Critical")),
+                            levels = c("Critical","delayed_in_past","No_credit_due","All_paid_duly","All_existing_paid_duly"))
+gdat$Purpose<-factor(mapvalues(gdat$Purpose,c("A40","A41","A42","A43","A44","A45","A46","A47","A48","A49","A410"),c("New.car", "Used.car", "Furniture", "Television", "Appliances", "Repairs", "Education", "Vacation", "Retraining", "Business", "Others")))
+
+gdat$Savings_account_bonds<-factor(mapvalues(gdat$Savings_account_bonds,c("A61","A62","A63","A64","A65"),c("lt_100","100_500","500_1000","gt_1000","No_savings")),
+                                   levels=c("No_savings","lt_100","100_500","500_1000","gt_1000"))
+
+gdat$Present_employment_since<-factor(mapvalues(gdat$Present_employment_since,c("A71","A72","A73","A74","A75"),c("Unemployed","1_yr","4_yr","7_yr","gt_7_yr")),
+                                      levels=c("Unemployed","1_yr","4_yr","7_yr","gt_7_yr"))
+
+gdat$Personal_status_and_sex<-factor(mapvalues(gdat$Personal_status_and_sex,c("A91","A92","A93","A94","A95"),c("Male.divorced","Female.divorced","male.single","male.married","female.single")),
+                                     levels=c("female.single","Male.divorced","Female.divorced","male.single","male.married"))
+
+gdat$Guarantors<-factor(mapvalues(gdat$Guarantors,c("A101","A102","A103"),c("none","co_applicant","guarantor")),levels=c("none","co_applicant","guarantor"))
+
+gdat$Property<-factor(mapvalues(gdat$Property,c("A121","A122","A123","A124"),c("Real.estate","insurance","car","No.property")),levels=c("No.property","Real.estate","insurance","car"))
+
+gdat$Other_installment_plans<-factor(mapvalues(gdat$Other_installment_plans,c("A141","A142","A143"),c("banks","stores","None")),levels=c("None","banks","stores"))
+
+gdat$Housing<-factor(mapvalues(gdat$Housing,c("A151","A152","A153"),c("Rent","Own","Free")),levels =c("Free","Rent","Own"))
+
+gdat$Job<-factor(mapvalues(gdat$Job,c("A171","A172","A173","A174"),c("Unemployed_NonRes","Unskilled_Res","skilled","management")),
+                 levels=c("Unemployed_NonRes","Unskilled_Res","skilled","management"))
+
+gdat$Telephone<-factor(mapvalues(gdat$Telephone,c("A191","A192"),c("No","Yes")))
+
+gdat$foreign_worker<-factor(mapvalues(gdat$foreign_worker,c("A201","A202"),c("Yes","No")))
+
+gdat$Number_of_dependants<-factor(mapvalues(gdat$Number_of_dependants,c(2,1),c("lt_2","gt_2")),levels=c("lt_2","gt_2"))
+
+gdat$Installment_rate_in_percentage_of_disp_income<-factor(mapvalues(gdat$Installment_rate_in_percentage_of_disp_income,c(4,3,2,1),c("0_20","20_25","25_35","35_plus")),
+                                                           levels =c("0_20","20_25","25_35","35_plus"))
+
+gdat$Present_residence_since <-factor(mapvalues(gdat$Present_residence_since ,c("1","2","3","4"),c("lt_1_yr","1_4yr","4_7yr","gt_7_yr")),levels =c("lt_1_yr","1_4yr","4_7yr","gt_7_yr"))
+
+gdat$Credit_Risk<-factor(mapvalues(gdat$Credit_Risk,c(2,1),c("Bad","Good")))
+
+```
+
+### Logistic Regression
+
+
+• Removing Insignificant Variables from the model and arriving at final model for logistic Regression.
+
+• Table below summarizes the variables selected from all the approaches. Rows highlighted in red are removed in this final model.
+
+```{r, message=FALSE,echo=FALSE}
+final.sig <- read.xlsx("./Spreadsheets/sig_variables_classification.xlsx")
+options(knitr.kable.NA = '')
+kable(final.sig) %>%
+  kable_styling(full_width = F,c("striped","bordered")) %>%
+  row_spec(1:20,hline_after = TRUE) %>%
+  row_spec(c(1,5,7,9,10,11,12),color = "white",background = "red") %>%
+  scroll_box(width = "100%", height = "400px")
+```
+
+Below are the Variables which do not occur significant in more than 2 of the above models.
+Age 
+Job
+Telephone
+Number_of_dependants
+Number_of_existing_credits_at_this_bank
+Other_installment_plans
+
+```{r, echo=FALSE, message=FALSE,include=FALSE}
+gdat_log<- as.data.frame(unclass(gdat))
+str(gdat_log)
+## 75% of the sample size
+smp_size <- floor(0.70 * nrow(gdat))
+## set the seed to make your partition reproducible
+set.seed(123)
+train_ind <- sample(seq_len(nrow(gdat_log)), size = smp_size)
+train_df <- gdat_log[train_ind, ]
+test_df <- gdat_log[-train_ind, ]
+dim(train_df)
+dim(test_df)
+```
+
+
+```{r,message=FALSE,echo=FALSE}
+#Age,Job,Present_employment_since
+#(foreign_worker,Housing,Number_of_dependants,Number_of_existing_credits_at_this_bank,Other_installment_plans))
+#!c(foreign_worker,Housing,Number_of_dependants,Number_of_existing_credits_at_this_bank,Other_installment_plans)
+
+train_df_log <- dplyr::select(train_df,!c(Age,Job,Telephone,Number_of_dependants,Number_of_existing_credits_at_this_bank,Other_installment_plans))
+
+test_df_log <-  dplyr::select(test_df,!c(Job,Telephone,Number_of_dependants,Number_of_existing_credits_at_this_bank,Other_installment_plans))
+#dim(train_df_log)
+
+```
+\
+• Logistic Regression is built with Variables selected. Betas with Subset of variables with most explanatory Power is shown below.
+\
+```{r,message=FALSE,echo=FALSE}
+LogisticModel_train_sig1 <- glm(Credit_Risk ~ .,family=binomial, data = train_df_log)
+logfit_sig<-summary(LogisticModel_train_sig1)
+
+kable(logfit_sig$coefficients,caption = " Logistic Model - Coefficient Estimates") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T) %>%
+  add_indent(c(1:dim(logfit_sig$coefficients)[1])) %>% row_spec(c(which(logfit_sig$coefficients[,4] <= 0.05)),bold = T,background = "yellowgreen") %>% row_spec(c(which((logfit_sig$coefficients[,4] > 0.05) & (logfit_sig$coefficients[,4] < 0.1))),bold = T,background = "lightsalmon")
+
+```
+\
+• Select Optimal Cut-off Value for Logistic Model that maximizes accuracy
+\
+```{r,message=FALSE,echo=FALSE}
+trn<-as.data.frame(train_df_log)
+tst<-test_df_log
+trn$prediction <- predict( LogisticModel_train_sig1, newdata = train_df_log, type = "response" )
+tst$prediction  <- predict( LogisticModel_train_sig1, newdata = test_df_log , type = "response" )
+accuracy_info <- AccuracyCutoffInfo( train = trn, test = tst, 
+                                     predict = "prediction", actual = "Credit_Risk" )
+# define the theme for the next plot
+accuracy_info$plot
+```
+\
+• Analyzing  Model Performance from Train set Confusion Matrix and Model ROC-AUC Curve
+\
+```{r,message=FALSE,echo=FALSE}
+log_fit_sig_cm<-confusion_roc_function(LogisticModel_train_sig1,train_df_log,test_df_log, cutoff = 0.5)
+#cofusion_roc_function(LogisticModel_train,train_df,test_df)
+
+kable(as.matrix(log_fit_sig_cm$CM_TRAIN),caption = "TRAIN FIT") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T)  
+
+tidy(log_fit_sig_cm$CM_TRAIN)[-c(3),c(1,3)]%>%kable(caption = "TRAIN FIT PERFORMANCE") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T)  
+
+log_fit_sig_cm[[5]]
+
+
+```
+\
+• Analyzing  Model Performance from Test set Confusion Matrix and Model ROC-AUC Curve
+\
+```{r,message=FALSE,echo=FALSE}
+kable(as.matrix(log_fit_sig_cm$CM_TEST),caption = "TEST FIT") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T)  
+
+tidy(log_fit_sig_cm$CM_TEST)[-c(3),c(1,3)]%>%kable(caption = "TEST FIT PERFORMANCE") %>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T)  
+
+log_fit_sig_cm[[6]]
+
+```
+
+### Summarizing the results
+
+```{r, echo=FALSE, message=FALSE,include=FALSE, warning=FALSE}
+LogisticModel_train <- glm(Credit_Risk ~ .,family=binomial, data = train_df)
+log_full_mofrl<-confusion_roc_function(LogisticModel_train,train_df,test_df)
+
+trControl <- trainControl(method = "cv",
+                          number = 10,savePredictions = "final",classProbs = T)
+fit_rf <- caret::train(Credit_Risk~.,data = train_df,
+                method = "rf",
+                metric = "Accuracy",
+                trControl = trControl,
+                importance = TRUE,
+                nodesize = 14,
+                ntree = 800,
+                maxnodes = 24)
+rf_full<-confusion_roc_function(fit_rf,train_df,test_df,model="RF")
+
+german.naive = caret::train(train_df[,names(train_df) != "Credit_Risk"],train_df$Credit_Risk,'nb',trControl=trainControl(method='cv',number=10))
+nb_full<-confusion_roc_function(german.naive,train_df,test_df,model="NB")
+
+```
+
+```{r,message=FALSE,echo=FALSE,include=FALSE, warning=FALSE}
+##RF significant
+important_columns_rf<-c("Age","Credit_amount","Credit_history","Duration_in_month","Guarantors","Job","Personal_status_and_sex","Present_employment_since","Property","Purpose","Savings_account_bonds","Status_checking_account","Present_residence_since","Credit_Risk")
+subset_imp_var_rf<-gdat_log[important_columns_rf]
+smp_size <- floor(0.70 * nrow(gdat))
+## set the seed to make your partition reproducible
+set.seed(45)
+train_ind <- sample(seq_len(nrow(subset_imp_var_rf)), size = smp_size)
+train_df_subset_rf <- subset_imp_var_rf[train_ind, ]
+test_df_subset_rf <- subset_imp_var_rf[-train_ind, ]
+## Random Forest
+trControl <- trainControl(method = "cv",
+                          number = 15,savePredictions = "final",classProbs = T)
+fit_rf_sig <- caret::train(Credit_Risk~.,data = train_df_subset_rf,
+                method = "rf",
+                metric = "Accuracy",
+                trControl = trControl,
+                importance = TRUE,
+                nodesize = 14,
+                ntree = 800,
+                maxnodes = 24)
+rf_fit_sig<-confusion_roc_function(fit_rf_sig,train_df_subset_rf,test_df_subset_rf,model="RF")
+
+## NB significant
+important_columns_nb<-c("Age","Credit_amount","Duration_in_month","Telephone","Job","Personal_status_and_sex","Present_employment_since","Property","Purpose","Savings_account_bonds","Status_checking_account","Present_residence_since","Installment_rate_in_percentage_of_disp_income","Credit_Risk")
+
+subset_imp_var_nb<-gdat_log[important_columns_nb]
+smp_size <- floor(0.70 * nrow(gdat))
+
+## set the seed to make your partition reproducible
+set.seed(45)
+train_ind <- sample(seq_len(nrow(subset_imp_var_nb)), size = smp_size)
+train_df_subset_nb <- subset_imp_var_nb[train_ind, ]
+test_df_subset_nb <- subset_imp_var_nb[-train_ind, ]
+
+german.naive_sig = caret::train(train_df_subset_nb[,names(train_df_subset_nb) != "Credit_Risk"],train_df_subset_nb$Credit_Risk,'nb',trControl=trainControl(method='cv',number=10))
+
+nb_sig<-confusion_roc_function(german.naive_sig,train_df_subset_nb,test_df_subset_nb,model="NB")
+```
+
+
+
+
+```{r,message=FALSE,echo=FALSE}
+
+#Test Model Metrics
+log_full_test<-cbind("Accuracy_Test"=log_full_mofrl$CM_TEST$overall[1],"AUC_Test"=log_full_mofrl$plot_TEST$auc[1],"TPR_Test"=log_full_mofrl$CM_TEST$byClass[1],"TNR_Test"=log_full_mofrl$CM_TEST$byClass[2],"FNR_Test"=1-log_full_mofrl$CM_TEST$byClass[1],"FPR_Test"=1-log_full_mofrl$CM_TEST$byClass[2])
+
+rf_full_test<-cbind("Accuracy_Test"=rf_full$CM_TEST$overall[1],"AUC_Test"=rf_full$AUC_test$auc[1],"TPR_Test"=rf_full$CM_TEST$byClass[1],"TNR_Test"=rf_full$CM_TEST$byClass[2],"FNR_Test"=1-rf_full$CM_TEST$byClass[1],"FPR_Test"=1-rf_full$CM_TEST$byClass[2])
+
+rf_fit_sig_test<-cbind("Accuracy_Test"=rf_fit_sig$CM_TEST$overall[1],"AUC_Test"=rf_fit_sig$AUC_test$auc[1],"TPR_Test"=rf_fit_sig$CM_TEST$byClass[1],"TNR_Test"=rf_fit_sig$CM_TEST$byClass[2],"FNR_Test"=1-rf_fit_sig$CM_TEST$byClass[1],"FPR_Test"=1-rf_fit_sig$CM_TEST$byClass[2])
+
+
+naive_full_test<-cbind("Accuracy_Test"=nb_full$CM_TEST$overall[1],"AUC_Test"=nb_full$AUC_test$auc[1],"TPR_Test"=nb_full$CM_TEST$byClass[1],"TNR_Test"=nb_full$CM_TEST$byClass[2],"FNR_Test"=1-nb_full$CM_TEST$byClass[1],"FPR_Test"=1-nb_full$CM_TEST$byClass[2])
+
+nb_sig_test<-cbind("Accuracy_Train"=nb_sig$CM_TEST$overall[1],"AUC_Train"=nb_sig$AUC_test$auc[1],"TPR_Train"=nb_full$CM_TEST$byClass[1],"TNR_Train"=nb_sig$CM_TEST$byClass[2],"FNR_Train"=1-nb_sig$CM_TEST$byClass[1],"FPR_Train"=1-nb_sig$CM_TEST$byClass[2])
+
+
+
+log_final_test<-cbind("Accuracy_Test"=log_fit_sig_cm$CM_TEST$overall[1],"AUC_Test"=log_fit_sig_cm$plot_TEST$auc[1],"TPR_Test"=log_fit_sig_cm$CM_TEST$byClass[1],"TNR_Test"=log_fit_sig_cm$CM_TEST$byClass[2],"FNR_Test"=1-log_fit_sig_cm$CM_TEST$byClass[1],"FPR_Test"=1-log_fit_sig_cm$CM_TEST$byClass[2])
+
+test_perf<-rbind(log_full_test,rf_full_test,rf_fit_sig_test,naive_full_test,nb_sig_test,log_final_test)
+
+#Train Model Metrics
+log_full_train<-cbind("Accuracy_Train"=log_full_mofrl$CM_TRAIN$overall[1],"AUC_Train"=log_full_mofrl$plot_TRAIN$auc[1],"TPR_Train"=log_full_mofrl$CM_TRAIN$byClass[1],"TNR_Train"=log_full_mofrl$CM_TRAIN$byClass[2],"FNR_Train"=1-log_full_mofrl$CM_TRAIN$byClass[1],"FPR_Train"=1-log_full_mofrl$CM_TRAIN$byClass[2])
+
+rf_full_train<-cbind("Accuracy_Train"=rf_full$CM_TRAIN$overall[1],"AUC_Train"=rf_full$AUC_train$auc[1],"TPR_Train"=rf_full$CM_TRAIN$byClass[1],"TNR_Train"=rf_full$CM_TRAIN$byClass[2],"FNR_Train"=1-rf_full$CM_TRAIN$byClass[1],"FPR_Train"=1-rf_full$CM_TRAIN$byClass[2])
+
+rf_fit_sig_train<-cbind("Accuracy_Train"=rf_fit_sig$CM_TRAIN$overall[1],"AUC_Train"=rf_fit_sig$AUC_train$auc[1],"TPR_Train"=rf_fit_sig$CM_TRAIN$byClass[1],"TNR_Train"=rf_fit_sig$CM_TRAIN$byClass[2],"FNR_Train"=1-rf_fit_sig$CM_TRAIN$byClass[1],"FPR_Train"=1-rf_fit_sig$CM_TRAIN$byClass[2])
+
+naive_full_train<-cbind("Accuracy_Train"=nb_full$CM_TRAIN$overall[1],"AUC_Train"=nb_full$AUC_train$auc[1],"TPR_Train"=nb_full$CM_TRAIN$byClass[1],"TNR_Train"=nb_full$CM_TRAIN$byClass[2],"FNR_Train"=1-nb_full$CM_TRAIN$byClass[1],"FPR_Train"=1-nb_full$CM_TRAIN$byClass[2])
+
+nb_sig_train<-cbind("Accuracy_Train"=nb_sig$CM_TRAIN$overall[1],"AUC_Train"=nb_sig$AUC_train$auc[1],"TPR_Train"=nb_full$CM_TRAIN$byClass[1],"TNR_Train"=nb_sig$CM_TRAIN$byClass[2],"FNR_Train"=1-nb_sig$CM_TRAIN$byClass[1],"FPR_Train"=1-nb_sig$CM_TRAIN$byClass[2])
+
+
+log_final_train<-cbind("Accuracy_Train"=log_fit_sig_cm$CM_TRAIN$overall[1],"AUC_Train"=log_fit_sig_cm$plot_TRAIN$auc[1],"TPR_Train"=log_fit_sig_cm$CM_TRAIN$byClass[1],"TNR_Train"=log_fit_sig_cm$CM_TRAIN$byClass[2],"FNR_Train"=1-log_fit_sig_cm$CM_TRAIN$byClass[1],"FPR_Train"=1-log_fit_sig_cm$CM_TRAIN$byClass[2])
+
+train_perf<-rbind(log_full_train,rf_full_train,rf_fit_sig_train,naive_full_train,nb_sig_train,log_final_train)
+
+
+total_perf_all_models<-cbind(train_perf,test_perf)
+rownames(total_perf_all_models) <- c("Logistic_Regression","Random_Forest","Random_Forest_SIG","Naive_Bayes","Naive_SIG","Logistic_Final")
+
+#total_perf_all_models 
+kable(t(total_perf_all_models),caption = "Model Performance Suummary")%>% kable_paper("hover", full_width = F,html_font = "Cambria",bootstrap_options = "striped",fixed_thead = T)  
+
+``` 

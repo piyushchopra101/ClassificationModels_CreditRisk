@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1614004398354.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "2145146326",
+    "id" : "2463D43B",
+    "lastKnownWriteTime" : 1614004137,
+    "last_content_update" : 1614004137,
+    "path" : "~/Documents/Github/ClassificationModels_CreditRisk/ExploratoryDataAnalysis.Rmd",
+    "project_path" : "ExploratoryDataAnalysis.Rmd",
+    "properties" : {
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

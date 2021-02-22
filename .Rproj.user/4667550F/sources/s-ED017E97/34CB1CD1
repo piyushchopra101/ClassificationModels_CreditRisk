@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1614004413221.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "3804528245",
+    "id" : "34CB1CD1",
+    "lastKnownWriteTime" : 1614004137,
+    "last_content_update" : 1614004137,
+    "path" : "~/Documents/Github/ClassificationModels_CreditRisk/RandomForest.Rmd",
+    "project_path" : "RandomForest.Rmd",
+    "properties" : {
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 5,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}
